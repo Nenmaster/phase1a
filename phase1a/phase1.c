@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "phase1.h"
-#include <usloss.h>
+#include "src/usloss.h"
 
 #define USLOSS_MIN_STACK (80 * 1024)
 // helper prototypes 
