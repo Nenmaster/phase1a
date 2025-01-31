@@ -7,47 +7,54 @@
 // helper prototypes 
 
 typedef struct processInfo{
+    // general process info 
     char *name;
-    int (*fp)(void*);
-    void *USLOSS_Context;
-    int *stackSize;
     int priority;
     int pid;
     int *status;
+
+    // info to work with USLOSS
+    USLOSS_Context *context;
+    void *stack;
+    int stackSize;
+    void (*fp)(void);
+   
 }pInfo;
 
- pInfo processTable[MAXPROC];
+pInfo processTable[MAXPROC];
 
 int init(){
-    testcase_main(); 
-    USLOSS_ConextSwitch(NULL, testcase_main());
-
+    testcase_main();	
+    pInfo np;
+    np.fp = &testcase_main();
+    USLOSS_ContextInit(np.context, np.stack, np.stackSize,NULL, testcase_main()); 
+    processTable[0] = np;
     if(testcase_main() != 0){
         fprintf(stderr, "incorrect user function");
         return -1;
     } else {
         USLOSS_Halt(0);
+    
     }
 }
 
-int testcase_main(){
+void *testcase_main(){
     int c;
     while((c = testcase_main()) != 0) {
             testcase_main();
     }
-    return USLOSS_Halt(c);
+    USLOSS_Halt(c);
 }
 
 void phase1_init(){
-    pInfo newProcess;
     int *size = malloc(USLOSS_MIN_STACK * sizeof(char));
 
-    newProcess.name = "init";
-    newProcess.fp = init();
-    newProcess.USLOSS_Context = "init";
-    newProcess.stackSize = size;
+    np.name = "init";
+    np.stackSize = USLOSS_MIN_STACK;
     newProcess.priority = 6;
     newProcess.pid = 1;
+
+    init();
 
     int slot = newProcess.pid % MAXPROC;
 
@@ -66,10 +73,11 @@ int join(int *status){
 
 void quit_phase_1a(int status, int switchToPid){
 
+    printf("Not started");
 }
 
 void quit(int status){
-
+    printf("Not started");
 }
 
 int getpid(){
@@ -77,20 +85,15 @@ int getpid(){
 }
 
 void dumpProcesses(){
-
+    printf("Not started");
 }
 
 void TEMP_switchTo(int pid){
-
+    printf("Not started");
 }
 
-// Helper Functions 
+int main() {
 
-
-
-int main(){    
-
-    phase1_init();
-
-    return 0;
+    return 0;        
 }
+
