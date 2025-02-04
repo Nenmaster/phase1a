@@ -6,7 +6,9 @@
 #define _PHASE1_H
 #define _XOPEN_SOURCE 700
 
-#include "src/usloss.h"
+//#include "src/usloss.h"
+#include "usloss.h"
+
 
 /*
  * Maximum number of processes. 

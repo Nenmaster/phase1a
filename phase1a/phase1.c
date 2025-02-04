@@ -1,99 +1,129 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "phase1.h"
-#include "src/usloss.h"
+//#include "src/usloss.h"
+#include "usloss.h"
+int pid = 1;
 
-#define USLOSS_MIN_STACK (80 * 1024)
-// helper prototypes 
+typedef struct
 
-typedef struct processInfo{
+typedef struct{
     // general process info 
     char *name;
     int priority;
     int pid;
     int *status;
-
+    
     // info to work with USLOSS
-    USLOSS_Context *context;
+    USLOSS_Context *new;
     void *stack;
     int stackSize;
     void (*fp)(void);
-   
+    int (*tcm)(void);
 }pInfo;
 
 pInfo processTable[MAXPROC];
 
-int init(){
-    testcase_main();	
-    pInfo np;
-    np.fp = &testcase_main();
-    USLOSS_ContextInit(np.context, np.stack, np.stackSize,NULL, testcase_main()); 
-    processTable[0] = np;
-    if(testcase_main() != 0){
-        fprintf(stderr, "incorrect user function");
-        return -1;
-    } else {
-        USLOSS_Halt(0);
-    
-    }
+pInfo createNewProcces(char *name,int priority){
+    pInfo newProcess;
+    newProcess.name = name;
+    newProcess.priority = priority;
+    newProcess.pid = pid;
+    ++pid;
+    newProcess.stackSize = USLOSS_MIN_STACK;
+    newProcess.stack = malloc(newProcess.stackSize * sizeof(pInfo));
+    printf("[creatNewProcess] ran\n");
+    return newProcess;
 }
 
-void *testcase_main(){
-    int c;
-    while((c = testcase_main()) != 0) {
-            testcase_main();
+
+
+pInfo findPID(int pid){
+    pInfo targetProc;
+    for(int i = 0; i < MAXPROC; i++){
+        if(processTable[i].pid == pid){
+            targetProc = processTable[i];
+            printf("process table name %s\n", targetProc.name);
+        }
     }
-    USLOSS_Halt(c);
+    printf("find pid ran\n");
+    return targetProc;
+}
+
+void insertToTable(pInfo process){
+    int slot = process.pid % MAXPROC;
+    processTable[slot] = process;
+    printf("[insertTotabel] instert to table ran and process[table] = %s\n", processTable[slot].name);
+}
+
+void init(void){
+  pInfo newProcess = createNewProcces("testcase_main",3);
+  printf("[inint] process name is %s and process id is %d\n", newProcess.name, newProcess.pid);
+  newProcess.tcm = testcase_main;
+  insertToTable(newProcess);
+  phase2_start_service_processes();
+  phase3_start_service_processes();
+  phase4_start_service_processes();
+  phase5_start_service_processes(); 
+  if(!testcase_main()){
+    printf("halt ran ****************************\n");
+    USLOSS_Halt(testcase_main());
+  }
 }
 
 void phase1_init(){
-    int *size = malloc(USLOSS_MIN_STACK * sizeof(char));
-
-    np.name = "init";
-    np.stackSize = USLOSS_MIN_STACK;
-    newProcess.priority = 6;
-    newProcess.pid = 1;
-
+    pInfo newProcess = createNewProcces("init",6);
+    printf("[phase_1] process name is %s and process id is %d\n", newProcess.name, newProcess.pid); 
+    newProcess.fp = init;
+    insertToTable(newProcess);
     init();
-
-    int slot = newProcess.pid % MAXPROC;
-
-    processTable[slot] = newProcess;
-
+    printf("[phase1_int] ran\n");
 }
 
 
 int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priority){
+    printf("[spork] ran\n"); 
     return 0;
 }
 
 int join(int *status){
+    printf("[join] ran\n");
     return 0;
 }
 
 void quit_phase_1a(int status, int switchToPid){
-
-    printf("Not started");
+    // not started
+    int *p = &status;
+    join(p);
+    printf("[quitphase1a] ran\n"); 
+    exit(1);
 }
 
 void quit(int status){
-    printf("Not started");
+    // not started
+    int *p = &status;
+    join(p);
+    printf("[quit] ran\n");
+    exit(1);
 }
 
 int getpid(){
-    return 0;
+   int pid = 1;
+   pInfo process = processTable[pid % MAXPROC];
+   return process.pid;
 }
 
 void dumpProcesses(){
-    printf("Not started");
+    printf("Not started\n");
 }
 
 void TEMP_switchTo(int pid){
-    printf("Not started");
+    pInfo newProc = findPID(pid);
+    
+    USLOSS_ContextInit(newProc.new, newProc.stack, newProc.stackSize,NULL, newProc.fp);
+    printf("[initContext] ran\n");
+    USLOSS_ContextSwitch(NULL, newProc.new);
+    printf("[tempToSwitch] ran\n");
 }
 
-int main() {
-
-    return 0;        
-}
 
