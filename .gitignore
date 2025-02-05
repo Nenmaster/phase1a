@@ -3,3 +3,12 @@ phase1a.tar.gz
 phase1b.pdf
 usloss-4.pdf
 .DS_Store
+*.o
+*.out
+test*
+run_testcases_student
+phase1a/test00
+phase1a/testcases/phase1.c
+phase1a/testcases/test00.student_out
+temptestcaseholder/
+
