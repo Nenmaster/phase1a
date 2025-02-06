@@ -27,39 +27,24 @@ typedef struct{
     void *stack;
     int stackSize;
     void (*fp)(void);
-    int (*tcm)(void);
 }pInfo;
 
 
 pInfo processTable[MAXPROC];
 
- void wrapper(void){
+void wrapper(void){
+    printf("[wrapper] ran");
     int currProcPid = getpid();
+    printf("[wrapper] ran for pid %d\n]", currProcPid); 
     pInfo findproc = processTable[currProcPid % MAXPROC];
     findproc.fp();
-}
-
-pInfo findPID(int pid){
-    pInfo targetProc;
-    for(int i = 0; i < MAXPROC; i++){
-        if(processTable[i].pid == pid){
-            targetProc = processTable[i];
-        }
-    }
-    if(targetProc.tcm){
-        quit_phase_1a(targetProc.status, targetProc.pid);
-    }
-    return targetProc;
-}
-
-void insertToTable(pInfo process){
-    
-   // printf("[insertTotabel] instert to table ran and process[table] = %s\n", processTable[slot].name);
 }
 
 
 
 void init(void){ 
+  printf("[init] ran\n");
+
   phase2_start_service_processes();
   phase3_start_service_processes();
   phase4_start_service_processes();
@@ -68,56 +53,65 @@ void init(void){
   //call spork 
   int tcm = spork("testcase_main", NULL, NULL, USLOSS_MIN_STACK , 3);
   tcm = getpid();
-  printf("tcm is in spot %d",tcm);
+  printf("tcm is in spot %d\n",tcm);
 }
 
 void phase1_init(){
-    // set up all slot in table to not running state
-    pInfo emptyProc; 
-    emptyProc.state = NOTRUNING;
-    for(int i = 0; i < MAXPROC; ++i){
-            processTable[i] = emptyProc;
-    }
-
-    // set up but dont initialize initPrc 
+    //set up but dont initialize initPrc 
     pInfo initPrc;
     initPrc.name = "init";
     initPrc.priority = 6;
     initPrc.pid = 1;
     initPrc.state = NOTRUNING;
     initPrc.fp = init;
-    int slot = initPrc.pid % MAXPROC;
+    initPrc.stackSize = USLOSS_MIN_STACK;
+    initPrc.stack = malloc(initPrc.stackSize);
+
+    // maybe should be made global 
+    int slot = pid % MAXPROC;
     processTable[slot] = initPrc;
 
+    // usloss call that allowed init to actually run
+    USLOSS_ContextInit(&processTable[slot].new, processTable[slot].stack, processTable[slot].stackSize,NULL, &wrapper);
+
+    
+
+
     //testing purposes 
-    printf("[phase1_a] init inserted in to process table %d\n", processTable[slot].pid);  
-    printf("[phase1_a] state = %d\n", processTable[slot].state);
+    printf("[phase1_a] init inserted in to process table %d\n", slot);  
 }
 
 int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priority){
+    printf("[spork] ran\n");
     pInfo newProcess;
     newProcess.name = name;
     newProcess.priority = priority;
     newProcess.pid = pid;
     pid++;
-    newProcess.state = READY;
-    newProcess.stackSize = USLOSS_MIN_STACK;
-    newProcess.stack = malloc(newProcess.stackSize * sizeof(pInfo));
 
-    // creates child relation ship and inserts into table 
+    newProcess.fp = wrapper; 
+    newProcess.state = READY;
+    newProcess.stackSize = stacksize;
+    newProcess.stack = malloc(newProcess.stackSize);
+
+    // inserts into table 
     int slot = newProcess.pid % MAXPROC;
     processTable[slot] = newProcess;
+    
     USLOSS_ContextInit(&processTable[slot].new, processTable[slot].stack, processTable[slot].stackSize,NULL, &wrapper);
+  
     TEMP_switchTo(newProcess.pid);
+    printf("temp to swtich ran for pid %d\n", newProcess.pid);
     return newProcess.pid;
 }
 
 int join(int *status){
-    //printf("[join] ran\n");
+    printf("[join] ran\n");
     return 0;
 }
 
 void quit_phase_1a(int status, int switchToPid){
+    printf("[quit_phase_1a] ran\n");
     // not started
     int *p = &status;
     join(p);
@@ -126,6 +120,7 @@ void quit_phase_1a(int status, int switchToPid){
 }
 
 void quit(int status){
+    printf("[quit] ran\n");
     // not started
     int *p = &status;
     join(p);
@@ -134,7 +129,9 @@ void quit(int status){
 }
 
 int getpid(){ 
+   printf("[getpid] ran\n");
    pInfo currProcPid = processTable[pid % MAXPROC];
+   printf("[getpid] ran for process %d\n", currProcPid.pid);
    return currProcPid.pid;
 }
 
@@ -145,6 +142,9 @@ void dumpProcesses(){
 void TEMP_switchTo(int pid){
     printf("[TEMP_switchTO]\n");
     printf("[TEMP_switchTO]this should be init = %s\n", processTable[pid % MAXPROC].name);
+    printf("[TEMP_switchTO]this should be init = %d\n", processTable[pid % MAXPROC].pid);
+
+
     //printf("[initContext] ran\n");
     USLOSS_ContextSwitch(NULL, &processTable[pid % MAXPROC].new);
     //printf("[tempToSwitch] ran\n");
