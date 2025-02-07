@@ -6,7 +6,7 @@
 #define RUNNING 0
 #define NOTRUNING -1
 #define READY 2
-int pid = 1;
+int pId = 1;
 
 typedef struct Node {
     struct Node *parent;
@@ -33,11 +33,14 @@ typedef struct{
 pInfo processTable[MAXPROC];
 
 void wrapper(void){
-    printf("[wrapper] ran");
+    printf("[weaapper] ran\n");
     int currProcPid = getpid();
-    printf("[wrapper] ran for pid %d\n]", currProcPid); 
+    printf("[wrapper] ran for pid %d\n", currProcPid); 
     pInfo findproc = processTable[currProcPid % MAXPROC];
-    findproc.fp();
+    if(*findproc.fp()){
+        quit(findproc.status);
+    }
+    
 }
 
 
@@ -52,8 +55,9 @@ void init(void){
 
   //call spork 
   int tcm = spork("testcase_main", NULL, NULL, USLOSS_MIN_STACK , 3);
-  tcm = getpid();
-  printf("tcm is in spot %d\n",tcm);
+    while(join(&tcm)){
+        join(&tcm);
+    }
 }
 
 void phase1_init(){
@@ -68,7 +72,7 @@ void phase1_init(){
     initPrc.stack = malloc(initPrc.stackSize);
 
     // maybe should be made global 
-    int slot = pid % MAXPROC;
+    int slot = pId % MAXPROC;
     processTable[slot] = initPrc;
 
     // usloss call that allowed init to actually run
@@ -86,8 +90,9 @@ int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priorit
     pInfo newProcess;
     newProcess.name = name;
     newProcess.priority = priority;
-    newProcess.pid = pid;
-    pid++;
+    pId++;
+    newProcess.pid = pId;
+    printf("newproccess pid = %d\n", newProcess.pid);
 
     newProcess.fp = wrapper; 
     newProcess.state = READY;
@@ -130,7 +135,7 @@ void quit(int status){
 
 int getpid(){ 
    printf("[getpid] ran\n");
-   pInfo currProcPid = processTable[pid % MAXPROC];
+   pInfo currProcPid = processTable[pId % MAXPROC];
    printf("[getpid] ran for process %d\n", currProcPid.pid);
    return currProcPid.pid;
 }
