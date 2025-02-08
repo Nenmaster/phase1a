@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "phase1.h"
-//#include "src/usloss.h"
+#include "src/usloss.h"
 #include "usloss.h"
+#include <string.h>
 #define RUNNING 0
 #define NOTRUNING -1
 #define READY 2
@@ -27,37 +28,43 @@ typedef struct{
     void *stack;
     int stackSize;
     void (*fp)(void);
+    int (*startFunc)(void*);
+    void *argument;
 }pInfo;
 
 
 pInfo processTable[MAXPROC];
 
-void wrapper(void){
-    printf("[weaapper] ran\n");
-    int currProcPid = getpid();
-    printf("[wrapper] ran for pid %d\n", currProcPid); 
-    pInfo findproc = processTable[currProcPid % MAXPROC];
-    if(*findproc.fp()){
-        quit(findproc.status);
+// this func is meant to be used in the USLOSS_ContextInit
+// it should not return instead it will call startFunc which will
+//
+void uslossWrapper(void){
+    int pid = getpid();
+    pInfo process = processTable[pid % MAXPROC];
+    printf("[uslossWrapper] pid = %d\n", pid);
+
+    // this is allowing us to pass any type of func to uslosswrapper 
+    // allowing us to use USLOSS_ContextInit
+    // ill leave all the print statements so you can see were adding all counting process correctly just need to implement the rest of the function join and quit and creating children 
+    int retval;
+    if((retval = process.startFunc(process.argument)) == 0){
+        quit_phase_1a(retval, process.parentPid);
     }
-    
 }
 
+void init(void) { 
+    phase2_start_service_processes();
+    phase3_start_service_processes();
+    phase4_start_service_processes();
+    phase5_start_service_processes(); 
 
-
-void init(void){ 
-  printf("[init] ran\n");
-
-  phase2_start_service_processes();
-  phase3_start_service_processes();
-  phase4_start_service_processes();
-  phase5_start_service_processes(); 
-
-  //call spork 
-  int tcm = spork("testcase_main", NULL, NULL, USLOSS_MIN_STACK , 3);
-    while(join(&tcm)){
-        join(&tcm);
-    }
+    pInfo test;
+    test.argument = NULL;
+    test.startFunc = (void *) testcase_main;
+  
+    int tcm = spork("testcase_main", test.startFunc,NULL, USLOSS_MIN_STACK, 2);
+    // must call temp switch to according to 1a instrcutions for init
+    TEMP_switchTo(tcm);
 }
 
 void phase1_init(){
@@ -65,67 +72,67 @@ void phase1_init(){
     pInfo initPrc;
     initPrc.name = "init";
     initPrc.priority = 6;
-    initPrc.pid = 1;
+    initPrc.pid = 1;    
     initPrc.state = NOTRUNING;
-    initPrc.fp = init;
+    initPrc.startFunc = (void *) init;
+    initPrc.argument = NULL;
+    initPrc.fp = uslossWrapper;
     initPrc.stackSize = USLOSS_MIN_STACK;
     initPrc.stack = malloc(initPrc.stackSize);
 
     // maybe should be made global 
-    int slot = pId % MAXPROC;
+    int slot = initPrc.pid % MAXPROC;
+    //printf("slot = %d\n", slot);
     processTable[slot] = initPrc;
-
-    // usloss call that allowed init to actually run
-    USLOSS_ContextInit(&processTable[slot].new, processTable[slot].stack, processTable[slot].stackSize,NULL, &wrapper);
-
     
-
-
-    //testing purposes 
-    printf("[phase1_a] init inserted in to process table %d\n", slot);  
+    // usloss call that allowed init to actually run
+    USLOSS_ContextInit(&processTable[slot].new, processTable[slot].stack, processTable[slot].stackSize,NULL, uslossWrapper);
 }
 
 int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priority){
-    printf("[spork] ran\n");
     pInfo newProcess;
     newProcess.name = name;
-    newProcess.priority = priority;
-    pId++;
-    newProcess.pid = pId;
-    printf("newproccess pid = %d\n", newProcess.pid);
-
-    newProcess.fp = wrapper; 
-    newProcess.state = READY;
+    newProcess.priority = priority; 
+    newProcess.startFunc = func; 
+    newProcess.argument = arg;
     newProcess.stackSize = stacksize;
     newProcess.stack = malloc(newProcess.stackSize);
+
+    newProcess.fp = uslossWrapper;
+    printf("process name = %s\n", newProcess.name);
+
+    pId++;
+    newProcess.pid = pId;   
+    printf("[spork] pid = %d\n", newProcess.pid);
+
+    newProcess.parentPid = newProcess.pid - 1;
+    newProcess.state = READY;
+    printf("[spork] newProcess pid = %d\n", newProcess.pid);
 
     // inserts into table 
     int slot = newProcess.pid % MAXPROC;
     processTable[slot] = newProcess;
     
-    USLOSS_ContextInit(&processTable[slot].new, processTable[slot].stack, processTable[slot].stackSize,NULL, &wrapper);
+    USLOSS_ContextInit(&processTable[slot].new, processTable[slot].stack,
+                       processTable[slot].stackSize,NULL, uslossWrapper);
   
-    TEMP_switchTo(newProcess.pid);
-    printf("temp to swtich ran for pid %d\n", newProcess.pid);
+    printf("[spork] pid = %d\n", newProcess.pid);
     return newProcess.pid;
 }
 
 int join(int *status){
-    printf("[join] ran\n");
     return 0;
 }
 
 void quit_phase_1a(int status, int switchToPid){
-    printf("[quit_phase_1a] ran\n");
     // not started
     int *p = &status;
     join(p);
-    //printf("[quitphase1a] ran\n"); 
+    printf("[quitphase1a] ran\n"); 
     exit(1);
 }
 
 void quit(int status){
-    printf("[quit] ran\n");
     // not started
     int *p = &status;
     join(p);
@@ -134,25 +141,20 @@ void quit(int status){
 }
 
 int getpid(){ 
-   printf("[getpid] ran\n");
    pInfo currProcPid = processTable[pId % MAXPROC];
-   printf("[getpid] ran for process %d\n", currProcPid.pid);
    return currProcPid.pid;
 }
 
 void dumpProcesses(){
-    printf("Not started\n");
 }
 
 void TEMP_switchTo(int pid){
     printf("[TEMP_switchTO]\n");
-    printf("[TEMP_switchTO]this should be init = %s\n", processTable[pid % MAXPROC].name);
-    printf("[TEMP_switchTO]this should be init = %d\n", processTable[pid % MAXPROC].pid);
+    printf("[TEMP_switchTO]this is func = %s\n", processTable[pid % MAXPROC].name);
+    printf("[TEMP_switchTO]this is func pid = %d\n", processTable[pid % MAXPROC].pid);
 
 
-    //printf("[initContext] ran\n");
     USLOSS_ContextSwitch(NULL, &processTable[pid % MAXPROC].new);
-    //printf("[tempToSwitch] ran\n");
 }
 
 
