@@ -40,10 +40,19 @@ void init(void) {
     int tcm = spork("testcase_main", test.startFunc,NULL, USLOSS_MIN_STACK, 2);
     // must call temp switch to according to 1a instrcutions for init
     TEMP_switchTo(tcm);
+    
 
-    if(tcm != 0){
-        join(&tcm);
-    }
+    // this isnt work must figure out why once I implement join and add linklist to spork 
+
+    //if(tcm == 0){
+    //    printf("Testcase main terminated normally");
+    //    printf("[tcm] = %d", tcm);
+    //    USLOSS_Halt(tcm);
+    //} else {
+    //    printf("Unkown error");
+    //    USLOSS_Halt(tcm);
+    //}
+
 }
 
 // sets up init process but doesnt run it 
