@@ -28,6 +28,41 @@
 
 #define MAXSYSCALLS  50
 
+// Added structs to h file to clean up phase1.c
+
+typedef struct Node {
+    struct Node *parent;
+    struct Node *child;
+    struct Node *nextChild;
+}Node; 
+
+typedef struct{
+    // general process info 
+    char *name;
+    int priority;
+    int pid;
+    int parentPid;
+    int status;
+    int state; 
+    // info to work with USLOSS
+    USLOSS_Context context;
+    void *stack;
+    int stackSize;
+    void (*fp)(void);
+    int (*startFunc)(void*);
+    void *argument;
+}pInfo;
+
+
+
+
+
+
+
+
+
+
+
 
 /* 
  * These functions must be provided by Phase 1.
