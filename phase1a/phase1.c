@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "phase1.h"
 #include "src/usloss.h"
+#include "tree_queue.h"
 #include "usloss.h"
 #include <string.h>
 #define RUNNING 0
@@ -9,6 +10,9 @@
 #define READY 2
 int pId = 1;
 pInfo processTable[MAXPROC];
+pInfo *mainHead = NULL;
+
+void printList(int pid);
 
 // this func is meant to be used in the USLOSS_ContextInit
 // it should not return instead it will call startFunc which will
@@ -38,6 +42,8 @@ void init(void) {
     test.startFunc = (void *) testcase_main;
   
     int tcm = spork("testcase_main", test.startFunc,NULL, USLOSS_MIN_STACK, 2);
+    
+    
     // must call temp switch to according to 1a instrcutions for init
     TEMP_switchTo(tcm);
     
@@ -57,6 +63,7 @@ void init(void) {
 
 // sets up init process but doesnt run it 
 // places init into table as NOTRUNNING
+// Manually initialize init proc with USLOSS_ContextInit
 void phase1_init(){
     pInfo initPrc;
     initPrc.name = "init";
@@ -72,7 +79,8 @@ void phase1_init(){
     int slot = initPrc.pid % MAXPROC;
     //printf("slot = %d\n", slot);
     processTable[slot] = initPrc;
-    
+
+    addToTableList(&mainHead, initPrc);
     // usloss call that allowed init to actually run
     USLOSS_ContextInit(&processTable[slot].context,
                        processTable[slot].stack,
@@ -93,7 +101,7 @@ int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priorit
     newProcess.stackSize = stacksize;
     newProcess.stack = malloc(newProcess.stackSize);
 
-    printf("process name = %s\n", newProcess.name);
+    printf("[spork] process name = %s\n", newProcess.name);
 
     pId++;
     newProcess.pid = pId;   
@@ -106,7 +114,8 @@ int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priorit
     // inserts into table 
     int slot = newProcess.pid % MAXPROC;
     processTable[slot] = newProcess;
-    
+
+    addToTableList(&mainHead, newProcess);
     USLOSS_ContextInit(&processTable[slot].context,
                        processTable[slot].stack,
                        processTable[slot].stackSize,
@@ -124,6 +133,7 @@ void quit_phase_1a(int status, int switchToPid){
     int *p = &status;
     join(p);
     printf("[quitphase1a] ran\n"); 
+    printList(1);
     exit(1);
 }
 
@@ -152,3 +162,15 @@ void TEMP_switchTo(int pid){
 }
 
 
+//prints out table linked list 
+void printList(int pid){
+    pInfo *curr;
+    curr = mainHead;
+
+    while(curr != NULL){
+        printf("[printList] process name = %s\n", 
+               processTable[pid % MAXPROC].name);
+        ++pid;
+        curr = curr -> next;
+    }
+}

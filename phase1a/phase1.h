@@ -6,7 +6,6 @@
 #define _PHASE1_H
 #define _XOPEN_SOURCE 700
 
-//#include "src/usloss.h"
 #include "usloss.h"
 
 
@@ -30,13 +29,13 @@
 
 // Added structs to h file to clean up phase1.c
 
-typedef struct Node {
-    struct Node *parent;
+typedef struct childList {
+    int parentPID;
     struct Node *child;
     struct Node *nextChild;
-}Node; 
+}childList; 
 
-typedef struct{
+typedef struct pInfo{
     // general process info 
     char *name;
     int priority;
@@ -44,6 +43,16 @@ typedef struct{
     int parentPid;
     int status;
     int state; 
+
+    // in order to make a list of parent process where
+    // child list will be a list of a child processes 
+    struct pInfo *parent;
+    struct pInfo *next;
+
+    // childList
+    childList *child;
+
+
     // info to work with USLOSS
     USLOSS_Context context;
     void *stack;
@@ -53,7 +62,9 @@ typedef struct{
     void *argument;
 }pInfo;
 
+void printList(int pid);
 
+#include "tree_queue.h"
 
 
 
