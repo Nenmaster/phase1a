@@ -107,12 +107,13 @@ int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priorit
     newProcess.nextChild = NULL;
 
     printf("[spork] process name = %s\n", newProcess.name);
-
+    
+    newProcess.parentPid = getpid();
+    printf("parent pid = %d\n", newProcess.parentPid);
     pId++;
     newProcess.pid = pId;   
     //printf("[spork] pid = %d\n", newProcess.pid);
 
-    newProcess.parentPid = newProcess.pid - 1;
     newProcess.state = READY;
     //printf("[spork] newProcess parent pid = %d\n", newProcess.parentPid);
 
@@ -120,7 +121,7 @@ int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priorit
     int slot = newProcess.pid % MAXPROC;
     processTable[slot] = newProcess;
     
-    addToTree(&newProcess, newProcess.parentPid);
+    addToTree(&processTable[slot], newProcess.parentPid);
     USLOSS_ContextInit(&processTable[slot].context,
                        processTable[slot].stack,
                        processTable[slot].stackSize,
@@ -143,6 +144,8 @@ void quit_phase_1a(int status, int switchToPid){
     printList(&processTable[1], 1);
     printList(&processTable[2], 2);
     printList(&processTable[3], 3);
+    printList(&processTable[4], 4);
+
    // printList(proc, proc->parentPid);
     exit(1);
 }
@@ -155,6 +158,7 @@ void quit(int status){
 
 int getpid(){ 
    pInfo currProcPid = processTable[pId % MAXPROC];
+   printf("currprocpid = %d\n", currProcPid.pid);
    return currProcPid.pid;
 }
 
