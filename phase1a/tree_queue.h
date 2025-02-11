@@ -4,7 +4,9 @@
 #include "usloss.h"
 
 
-void addToTableList(pInfo **head, pInfo proc);
+void addToTree(pInfo *proc, int parentId);
+
+void printList(pInfo *proc, int parentpid);
 
 
 

@@ -12,7 +12,7 @@ int pId = 1;
 pInfo processTable[MAXPROC];
 pInfo *mainHead = NULL;
 
-void printList(int pid);
+void printList(pInfo *proc, int parentpid);
 
 // this func is meant to be used in the USLOSS_ContextInit
 // it should not return instead it will call startFunc which will
@@ -20,7 +20,6 @@ void printList(int pid);
 void uslossWrapper(void){
     int pid = getpid();
     pInfo process = processTable[pid % MAXPROC];
-    printf("[uslossWrapper] pid = %d\n", pid);
 
     // this is allowing us to pass any type of func to uslosswrapper 
     // allowing us to use USLOSS_ContextInit
@@ -79,8 +78,10 @@ void phase1_init(){
     int slot = initPrc.pid % MAXPROC;
     //printf("slot = %d\n", slot);
     processTable[slot] = initPrc;
+    addToTree(&initPrc, 0);
 
-    addToTableList(&mainHead, initPrc);
+
+    //addToTree(&initPrc, 0);
     // usloss call that allowed init to actually run
     USLOSS_ContextInit(&processTable[slot].context,
                        processTable[slot].stack,
@@ -101,21 +102,25 @@ int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priorit
     newProcess.stackSize = stacksize;
     newProcess.stack = malloc(newProcess.stackSize);
 
+    //newProcess.parent = NULL;
+    newProcess.firstChildHead = NULL;
+    newProcess.nextChild = NULL;
+
     printf("[spork] process name = %s\n", newProcess.name);
 
     pId++;
     newProcess.pid = pId;   
-    printf("[spork] pid = %d\n", newProcess.pid);
+    //printf("[spork] pid = %d\n", newProcess.pid);
 
     newProcess.parentPid = newProcess.pid - 1;
     newProcess.state = READY;
-    printf("[spork] newProcess parent pid = %d\n", newProcess.parentPid);
+    //printf("[spork] newProcess parent pid = %d\n", newProcess.parentPid);
 
     // inserts into table 
     int slot = newProcess.pid % MAXPROC;
     processTable[slot] = newProcess;
-
-    addToTableList(&mainHead, newProcess);
+    
+    addToTree(&newProcess, newProcess.parentPid);
     USLOSS_ContextInit(&processTable[slot].context,
                        processTable[slot].stack,
                        processTable[slot].stackSize,
@@ -132,8 +137,13 @@ int join(int *status){
 void quit_phase_1a(int status, int switchToPid){
     int *p = &status;
     join(p);
-    printf("[quitphase1a] ran\n"); 
-    printList(1);
+    //printf("[quitphase1a] ran\n"); 
+    int pid = getpid();
+    pInfo *proc = &processTable[pid % MAXPROC]; 
+    printList(&processTable[1], 1);
+    printList(&processTable[2], 2);
+    printList(&processTable[3], 3);
+   // printList(proc, proc->parentPid);
     exit(1);
 }
 
@@ -152,25 +162,12 @@ void dumpProcesses(){
 }
 
 void TEMP_switchTo(int pid){
-    printf("[TEMP_switchTO]this is func = %s\n",
-           processTable[pid % MAXPROC].name);
-    printf("[TEMP_switchTO]this is func status = %d\n",
-           processTable[pid % MAXPROC].state);
+    //printf("[TEMP_switchTO]this is func = %s\n",processTable[pid % MAXPROC].name);
+    //printf("[TEMP_switchTO]this is func status = %d\n",processTable[pid % MAXPROC].state);
 
 
     USLOSS_ContextSwitch(NULL, &processTable[pid % MAXPROC].context);
 }
 
 
-//prints out table linked list 
-void printList(int pid){
-    pInfo *curr;
-    curr = mainHead;
 
-    while(curr != NULL){
-        printf("[printList] process name = %s\n", 
-               processTable[pid % MAXPROC].name);
-        ++pid;
-        curr = curr -> next;
-    }
-}

@@ -27,13 +27,7 @@
 
 #define MAXSYSCALLS  50
 
-// Added structs to h file to clean up phase1.c
 
-typedef struct childList {
-    int parentPID;
-    struct Node *child;
-    struct Node *nextChild;
-}childList; 
 
 typedef struct pInfo{
     // general process info 
@@ -44,26 +38,25 @@ typedef struct pInfo{
     int status;
     int state; 
 
-    // in order to make a list of parent process where
-    // child list will be a list of a child processes 
+    // removed process or Node structs and used pInfo as the 
+    // main node struct for the process, have differnt structs was making
+    // adding, removing and search difficult 
     struct pInfo *parent;
-    struct pInfo *next;
-
-    // childList
-    childList *child;
+    struct pInfo *firstChildHead;
+    struct pInfo *nextChild;
 
 
     // info to work with USLOSS
     USLOSS_Context context;
     void *stack;
     int stackSize;
-    void (*fp)(void);
     int (*startFunc)(void*);
     void *argument;
 }pInfo;
 
-void printList(int pid);
+void printList(pInfo *proc, int parentpid);
 
+extern pInfo processTable[MAXPROC];
 #include "tree_queue.h"
 
 
