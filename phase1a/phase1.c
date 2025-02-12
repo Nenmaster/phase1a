@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,8 +16,6 @@ int pId = 1;
 pInfo processTable[MAXPROC];
 pInfo *mainHead = NULL;
 bool dead = false;
-int active = 0;
-int notactive = -1;
 bool flag = false;
 pInfo *currProc = NULL;
 
@@ -28,85 +27,89 @@ void printList(pInfo *proc, int parentpid);
 void uslossWrapper(void){
     int pid = getpid();
     pInfo process = processTable[pid % MAXPROC];
+    process.startFunc(process.argument);
+}
 
-    //printf("[uslosswrapper] proces name = %s\n", process.name);
-    int retval = process.startFunc(process.argument);
-    //printf("[init] Testcase main terminated normally 5\n");
+int testcase_mainWrapper(void *arg){
+    int retval = testcase_main();
     USLOSS_Halt(retval);
-
+    return retval;
 }
 
 void init(void) { 
-    //printf("[init] hi again 1\n");
     phase2_start_service_processes();
     phase3_start_service_processes();
     phase4_start_service_processes();
     phase5_start_service_processes(); 
-    //printf("[init] hi again 2\n");
     
-    pInfo test;
-    test.argument = NULL;
-    test.startFunc = (void *) testcase_main;
-    //printf("[init] hi again3 \n"); 
-
     int tcm = spork("testcase_main", 
-                    test.startFunc,
+                    testcase_mainWrapper,
                     NULL, 
                     USLOSS_MIN_STACK, 
-                    2);
+                    3);
 
-    // must call temp switch to according to 1a instrcutions for init
-    //printf("[init] tcm done here 4\n");
-    if(flag) {
-         //printf("[init] Testcase main terminated normally 5\n");
-         USLOSS_Halt(tcm);
-    }else {
-         USLOSS_ContextInit(&processTable[2 % MAXPROC].context,
-                       processTable[2 % MAXPROC].stack,
-                       processTable[2 % MAXPROC].stackSize,
-                       NULL,
-                       uslossWrapper);
-         TEMP_switchTo(tcm);
-    } 
+    TEMP_switchTo(tcm);
+
+    while(1){
+        int status;
+        int pid = join(&status);
+
+        if(pid == -2){
+            USLOSS_Console("Init has no more children\n");
+            USLOSS_Halt(1);
+        }
+    }
 }
 
 // sets up init process but doesnt run it 
 // places init into table as NOTRUNNING
 // Manually initialize init proc with USLOSS_ContextInit
 void phase1_init(){
-    pInfo initPrc;
-    initPrc.name = "init";
-    initPrc.priority = 6;
-    initPrc.pid = 1;    
-    initPrc.dead = true;
-    initPrc.state = notactive;
-    initPrc.startFunc = (void *) init;
-    initPrc.argument = NULL;
-    initPrc.stackSize = USLOSS_MIN_STACK;
-    initPrc.stack = malloc(initPrc.stackSize);
+    int prevPsr = USLOSS_PsrGet();
+    if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
+        USLOSS_Console("Failed to disable interrupts in phase1_init\n");
+        USLOSS_Halt(1);
+    }
 
-    // maybe should be made global 
-    int slot = initPrc.pid % MAXPROC; 
-    processTable[slot] = initPrc;
-    currProc = &processTable[slot];
-   // printf("slot = %d\n", slot);
-    addToTree(&initPrc, 0);
-    
+    for(int i = 0; i < MAXPROC; ++i){
+        processTable[i].pid = -1;
+    }
 
-    USLOSS_ContextInit(&processTable[slot].context,
-                       processTable[slot].stack,
-                       processTable[slot].stackSize,
+    pInfo *initPrc = &processTable[1];
+    initPrc -> name = "init";
+    initPrc -> priority = 6;
+    initPrc ->pid = 1;    
+    initPrc -> dead = false;
+    initPrc -> startFunc = NULL;
+    initPrc -> argument = NULL;
+    initPrc -> stackSize = USLOSS_MIN_STACK;
+    initPrc -> stack = malloc(initPrc -> stackSize);
+    if(initPrc -> stack == NULL){
+        USLOSS_Console("Malloc failed in init proc buy more ram");
+        USLOSS_Halt(1);
+    }
+
+    initPrc -> firstChildHead = NULL;
+    initPrc -> nextChild = NULL;
+
+    currProc = initPrc;
+
+    addToTree(initPrc, 0);
+
+    USLOSS_ContextInit(&initPrc -> context,
+                       initPrc -> stack,
+                       initPrc -> stackSize,
                        NULL,
-                       uslossWrapper);
+                       init);
 
-    //addToTree(&initPrc, 0);
-    // usloss call that allowed init to actually run
-    //printf("[phase1] here i am\n");
+    if(USLOSS_PsrSet(prevPsr) != 0) {
+        USLOSS_Console("Error: Failed to restore PSR in phase1_init\n");
+        USLOSS_Halt(1);
+    }
 }
 
 
 // spork works by pointing a new processes startfunc to that process function
-// we pass  
 int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priority){
     pInfo newProcess;
     newProcess.name = name;
@@ -117,64 +120,56 @@ int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priorit
     newProcess.stack = malloc(newProcess.stackSize);
     newProcess.dead = false;
 
-    //newProcess.parent = NULL;
     newProcess.firstChildHead = NULL;
     newProcess.nextChild = NULL;
 
-    //printf("[spork] process name = %s\n", newProcess.name);
     
     newProcess.parentPid = getpid();
-    //printf("parent pid = %d\n", newProcess.parentPid);
+
     pId++;
     newProcess.pid = pId;   
-    //printf("[spork] pid = %d\n", newProcess.pid);
 
-    newProcess.state = active;
     newProcess.status = -1;
-    //printf("[spork] newProcess parent pid = %d\n", newProcess.parentPid);
 
-    // inserts into table 
-    int slot = newProcess.pid % MAXPROC;
-    processTable[slot] = newProcess;
+    processTable[newProcess.pid % MAXPROC] = newProcess;
 
-    addToTree(&processTable[slot], newProcess.parentPid);
-    USLOSS_ContextInit(&processTable[slot].context,
-                       processTable[slot].stack,
-                       processTable[slot].stackSize,
+    addToTree(&processTable[newProcess.pid % MAXPROC], newProcess.parentPid);
+
+    USLOSS_ContextInit(&processTable[newProcess.pid % MAXPROC].context,
+                       processTable[newProcess.pid % MAXPROC].stack,
+                       processTable[newProcess.pid % MAXPROC].stackSize,
                        NULL,
                        uslossWrapper);
-    //printf("[spork]here i am\n"); 
+
     return newProcess.pid;
 }
 
 int join(int *status){
     int parentPid = getpid();
-    pInfo *parent = currProc;
     bool hasChildren = false;
 
     if(status == NULL){
         return -3;
     }
 
-    for(int i = 0; i < MAXPROC; ++i){
-        if(processTable[i].parentPid == parentPid && processTable[i].state != notactive){
-            hasChildren = true;
-            break;
-        }
-    }
+    //for(int i = 0; i < MAXPROC; ++i){
+    //    if(processTable[i].parentPid == parentPid && !processTable[i].dead){
+    //        hasChildren = true;
+    //        break;
+    //    }
+    //}
 
-    if(!hasChildren){
-        *status = -1;
-        return -2;
-    }
+    //if(!hasChildren){
+    //    *status = -1;
+    //    return -2;
+    //}
 
 
     for(int i = 0; i < MAXPROC; ++i){
         pInfo *proc = &processTable[i];
 
-        if(proc -> parentPid == parentPid && proc -> dead && proc -> state != notactive){
+        if(proc -> parentPid == parentPid && proc -> dead){
             *status = proc ->status; 
-            proc -> state = notactive;
             return proc -> pid;
         }
     }
@@ -188,9 +183,8 @@ void quit_phase_1a(int status, int switchToPid){
 
     processTable[pid % MAXPROC].status = status; 
     processTable[pid % MAXPROC].dead = true;
-   // printf("[quit] here i am 1\n"); 
+
     TEMP_switchTo(switchToPid); 
-   // printf("[quit] here i am 2\n"); 
 }
 
 void quit(int status){
@@ -212,16 +206,21 @@ void dumpProcesses(){
 }
 
 void TEMP_switchTo(int pid){
-       // printf("[tempswitch] enter context swtich\n");
         int parentPID = processTable[pid % MAXPROC].parentPid;  
-        
         currProc = &processTable[pid % MAXPROC];
-        //printf("[temptswitch] pid == %d\n",parentPID);
-        //printf("[temptoswitch] parent name = %s\n", processTable[parentPID % MAXPROC].name);
-        //pInfo *parent = processTable[pid % MAXPROC].parent -> name;
-        USLOSS_ContextSwitch(&processTable[parentPID].context,
+        //&processTable[parentPID % MAXPROC].context
+
+        //USLOSS_ContextSwitch(&currProc -> context,
+        //                     &processTable[pid % MAXPROC].context);
+
+
+        if(pid == 1){
+            USLOSS_ContextSwitch(NULL, &processTable[pid % MAXPROC].context);
+        }else {
+            USLOSS_ContextSwitch(&processTable[parentPID % MAXPROC].context,
                              &processTable[pid % MAXPROC].context);
 
+        }
 }
 
 
