@@ -7,7 +7,7 @@
 #define _XOPEN_SOURCE 700
 
 #include "usloss.h"
-
+#include <stdbool.h>
 
 /*
  * Maximum number of processes. 
@@ -37,6 +37,7 @@ typedef struct pInfo{
     int parentPid;
     int status;
     int state; 
+    bool dead;
 
     // removed process or Node structs and used pInfo as the 
     // main node struct for the process, have differnt structs was making

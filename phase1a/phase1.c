@@ -1,16 +1,24 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+
 #include "phase1.h"
 #include "src/usloss.h"
 #include "tree_queue.h"
 #include "usloss.h"
-#include <string.h>
-#define RUNNING 0
-#define NOTRUNING -1
-#define READY 2
+
+// might not be neccessary 
+
+// global variables
 int pId = 1;
 pInfo processTable[MAXPROC];
 pInfo *mainHead = NULL;
+bool dead = false;
+int active = 0;
+int notactive = -1;
+bool flag = false;
+pInfo *currProc = NULL;
 
 void printList(pInfo *proc, int parentpid);
 
@@ -21,43 +29,45 @@ void uslossWrapper(void){
     int pid = getpid();
     pInfo process = processTable[pid % MAXPROC];
 
-    // this is allowing us to pass any type of func to uslosswrapper 
-    // allowing us to use USLOSS_ContextInit
-    // ill leave all the print statements so you can see were adding all counting process correctly just need to implement the rest of the function join and quit and creating children 
-    int retval;
-    if((retval = process.startFunc(process.argument))){
-        quit_phase_1a(retval, process.parentPid);
-    }
+    //printf("[uslosswrapper] proces name = %s\n", process.name);
+    int retval = process.startFunc(process.argument);
+    //printf("[init] Testcase main terminated normally 5\n");
+    USLOSS_Halt(retval);
+
 }
 
 void init(void) { 
+    //printf("[init] hi again 1\n");
     phase2_start_service_processes();
     phase3_start_service_processes();
     phase4_start_service_processes();
     phase5_start_service_processes(); 
-
+    //printf("[init] hi again 2\n");
+    
     pInfo test;
     test.argument = NULL;
     test.startFunc = (void *) testcase_main;
-  
-    int tcm = spork("testcase_main", test.startFunc,NULL, USLOSS_MIN_STACK, 2);
-    
-    
+    //printf("[init] hi again3 \n"); 
+
+    int tcm = spork("testcase_main", 
+                    test.startFunc,
+                    NULL, 
+                    USLOSS_MIN_STACK, 
+                    2);
+
     // must call temp switch to according to 1a instrcutions for init
-    TEMP_switchTo(tcm);
-    
-
-    // this isnt work must figure out why once I implement join and add linklist to spork 
-
-    //if(tcm == 0){
-    //    printf("Testcase main terminated normally");
-    //    printf("[tcm] = %d", tcm);
-    //    USLOSS_Halt(tcm);
-    //} else {
-    //    printf("Unkown error");
-    //    USLOSS_Halt(tcm);
-    //}
-
+    //printf("[init] tcm done here 4\n");
+    if(flag) {
+         //printf("[init] Testcase main terminated normally 5\n");
+         USLOSS_Halt(tcm);
+    }else {
+         USLOSS_ContextInit(&processTable[2 % MAXPROC].context,
+                       processTable[2 % MAXPROC].stack,
+                       processTable[2 % MAXPROC].stackSize,
+                       NULL,
+                       uslossWrapper);
+         TEMP_switchTo(tcm);
+    } 
 }
 
 // sets up init process but doesnt run it 
@@ -68,26 +78,30 @@ void phase1_init(){
     initPrc.name = "init";
     initPrc.priority = 6;
     initPrc.pid = 1;    
-    initPrc.state = NOTRUNING;
+    initPrc.dead = true;
+    initPrc.state = notactive;
     initPrc.startFunc = (void *) init;
     initPrc.argument = NULL;
     initPrc.stackSize = USLOSS_MIN_STACK;
     initPrc.stack = malloc(initPrc.stackSize);
 
     // maybe should be made global 
-    int slot = initPrc.pid % MAXPROC;
-    //printf("slot = %d\n", slot);
+    int slot = initPrc.pid % MAXPROC; 
     processTable[slot] = initPrc;
+    currProc = &processTable[slot];
+   // printf("slot = %d\n", slot);
     addToTree(&initPrc, 0);
+    
 
-
-    //addToTree(&initPrc, 0);
-    // usloss call that allowed init to actually run
     USLOSS_ContextInit(&processTable[slot].context,
                        processTable[slot].stack,
                        processTable[slot].stackSize,
                        NULL,
                        uslossWrapper);
+
+    //addToTree(&initPrc, 0);
+    // usloss call that allowed init to actually run
+    //printf("[phase1] here i am\n");
 }
 
 
@@ -101,76 +115,113 @@ int spork(char *name, int (*func)(void *), void *arg, int stacksize, int priorit
     newProcess.argument = arg;
     newProcess.stackSize = stacksize;
     newProcess.stack = malloc(newProcess.stackSize);
+    newProcess.dead = false;
 
     //newProcess.parent = NULL;
     newProcess.firstChildHead = NULL;
     newProcess.nextChild = NULL;
 
-    printf("[spork] process name = %s\n", newProcess.name);
+    //printf("[spork] process name = %s\n", newProcess.name);
     
     newProcess.parentPid = getpid();
-    printf("parent pid = %d\n", newProcess.parentPid);
+    //printf("parent pid = %d\n", newProcess.parentPid);
     pId++;
     newProcess.pid = pId;   
     //printf("[spork] pid = %d\n", newProcess.pid);
 
-    newProcess.state = READY;
+    newProcess.state = active;
+    newProcess.status = -1;
     //printf("[spork] newProcess parent pid = %d\n", newProcess.parentPid);
 
     // inserts into table 
     int slot = newProcess.pid % MAXPROC;
     processTable[slot] = newProcess;
-    
+
     addToTree(&processTable[slot], newProcess.parentPid);
     USLOSS_ContextInit(&processTable[slot].context,
                        processTable[slot].stack,
                        processTable[slot].stackSize,
                        NULL,
                        uslossWrapper);
-  
+    //printf("[spork]here i am\n"); 
     return newProcess.pid;
 }
 
 int join(int *status){
-    return 0;
+    int parentPid = getpid();
+    pInfo *parent = currProc;
+    bool hasChildren = false;
+
+    if(status == NULL){
+        return -3;
+    }
+
+    for(int i = 0; i < MAXPROC; ++i){
+        if(processTable[i].parentPid == parentPid && processTable[i].state != notactive){
+            hasChildren = true;
+            break;
+        }
+    }
+
+    if(!hasChildren){
+        *status = -1;
+        return -2;
+    }
+
+
+    for(int i = 0; i < MAXPROC; ++i){
+        pInfo *proc = &processTable[i];
+
+        if(proc -> parentPid == parentPid && proc -> dead && proc -> state != notactive){
+            *status = proc ->status; 
+            proc -> state = notactive;
+            return proc -> pid;
+        }
+    }
+
+    *status = -1;
+    return  *status;
 }
 
-void quit_phase_1a(int status, int switchToPid){
-    int *p = &status;
-    join(p);
-    //printf("[quitphase1a] ran\n"); 
+void quit_phase_1a(int status, int switchToPid){ 
     int pid = getpid();
-    pInfo *proc = &processTable[pid % MAXPROC]; 
-    printList(&processTable[1], 1);
-    printList(&processTable[2], 2);
-    printList(&processTable[3], 3);
-    printList(&processTable[4], 4);
 
-   // printList(proc, proc->parentPid);
-    exit(1);
+    processTable[pid % MAXPROC].status = status; 
+    processTable[pid % MAXPROC].dead = true;
+   // printf("[quit] here i am 1\n"); 
+    TEMP_switchTo(switchToPid); 
+   // printf("[quit] here i am 2\n"); 
 }
 
 void quit(int status){
-    int *p = &status;
-    join(p);
-    exit(1);
+    //does nothing
 }
 
-int getpid(){ 
-   pInfo currProcPid = processTable[pId % MAXPROC];
-   printf("currprocpid = %d\n", currProcPid.pid);
-   return currProcPid.pid;
+int getpid(){
+    if(currProc == NULL){
+        return -1;
+    }
+    return currProc -> pid;
+}
+
+pInfo *getCurrProc(){
+    return currProc;
 }
 
 void dumpProcesses(){
 }
 
 void TEMP_switchTo(int pid){
-    //printf("[TEMP_switchTO]this is func = %s\n",processTable[pid % MAXPROC].name);
-    //printf("[TEMP_switchTO]this is func status = %d\n",processTable[pid % MAXPROC].state);
+       // printf("[tempswitch] enter context swtich\n");
+        int parentPID = processTable[pid % MAXPROC].parentPid;  
+        
+        currProc = &processTable[pid % MAXPROC];
+        //printf("[temptswitch] pid == %d\n",parentPID);
+        //printf("[temptoswitch] parent name = %s\n", processTable[parentPID % MAXPROC].name);
+        //pInfo *parent = processTable[pid % MAXPROC].parent -> name;
+        USLOSS_ContextSwitch(&processTable[parentPID].context,
+                             &processTable[pid % MAXPROC].context);
 
-
-    USLOSS_ContextSwitch(NULL, &processTable[pid % MAXPROC].context);
 }
 
 

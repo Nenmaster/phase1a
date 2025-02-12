@@ -42,7 +42,6 @@ int XXp1(void *arg)
 
     for(i = 0; i < 100; i++)
         ;
-
     quit_phase_1a(3, tm_pid);
 }
 
