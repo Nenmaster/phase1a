@@ -43,8 +43,18 @@ int findNextProc();
 // return and pass that value to quit 
 void uslossWrapper(void){
     int prevPsr = USLOSS_PsrGet();
+
+    if (!(prevPsr & USLOSS_PSR_CURRENT_MODE)) {
+        prevPsr |= USLOSS_PSR_CURRENT_MODE;
+    }
+
     if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
         USLOSS_Console("Failed to disable interrupts in phase1_init\n");
+        USLOSS_Halt(1);
+    }
+
+    if(USLOSS_PsrSet(prevPsr | USLOSS_PSR_CURRENT_INT) != 0){
+        USLOSS_Console("faled to enable interrupts in wrapper");
         USLOSS_Halt(1);
     }
 
@@ -52,6 +62,15 @@ void uslossWrapper(void){
     int pid = getpid();
     pInfo *process = &processTable[pid % MAXPROC];
     process -> startFunc(process -> argument);
+
+    prevPsr |= USLOSS_PSR_CURRENT_MODE;
+    if(USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0){
+        USLOSS_Console("Did not return in kernel mode");
+        USLOSS_Halt(1); 
+    }
+
+
+
     process -> dead = true;
 
     if(USLOSS_PsrSet(prevPsr) != 0) {
@@ -142,7 +161,7 @@ void phase1_init(){
     initPrc -> firstChildHead = NULL;
     initPrc -> nextChild = NULL;
     initPrc -> parent = NULL;
-    initPrc -> parentPid = -1;
+    initPrc -> parentPid = 0;
 
     currProc = NULL;
 
@@ -290,29 +309,39 @@ int join(int *status){
      
             free(child -> stack); 
             processTable[pid % MAXPROC].pid = -1;
- 
+
+            currProc -> firstChildHead = reverse(currProc ->firstChildHead);
+
             return pid;
         }
         prev = child;
         child = child -> nextChild;
         
     }
-
     if(USLOSS_PsrSet(prevPsr) != 0) {
         USLOSS_Console("Error: Failed to restore PSR in phase1_init\n");
         USLOSS_Halt(1);
     }
-    currProc -> firstChildHead = reverse(revList);
+    printf("madel");
+    pInfo *orginalList = reverse(currProc -> firstChildHead);
+    currProc -> firstChildHead = orginalList;
+
     return -1;
 }
 
-void quit_phase_1a(int status, int switchToPid){ 
+void quit_phase_1a(int status, int switchToPid){  
+    int prevPsr = USLOSS_PsrGet();
+    
+    if(!(prevPsr & USLOSS_PSR_CURRENT_MODE)){
+        USLOSS_Console("ERROR: Someone attempted to call quit_phase_1a while in user mode!\n");
+        USLOSS_Halt(1);
+    }
+
     if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
         USLOSS_Console("ERROR: Not in kernel mode. Call aborted.\n");
         USLOSS_Halt(1);
     }
 
-    int prevPsr = USLOSS_PsrGet();
     if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
         USLOSS_Console("Failed to disable interrupts in phase1_init\n");
         USLOSS_Halt(1);
@@ -388,7 +417,41 @@ pInfo *getCurrProc(){
 }
 
 void dumpProcesses(){
+    printf(" PID  PPID  NAME              PRIORITY  STATE\n");
+    
+    for(int i = 0; i < MAXPROC; ++i){
+        if(processTable[i].pid != -1){
+            printf("%4d ", processTable[i].pid);
+            printf("%5d  ", processTable[i].parentPid);
 
+            if(processTable[i].name != NULL){
+                int count = 0;
+                char *nameChar = processTable[i].name;
+                while(*nameChar && count < 16){
+                    putchar(*nameChar);
+                    nameChar++;
+                    count++;
+                }
+                while(count < 16){
+                    putchar(' ');
+                    count++;
+                }
+            }else {
+                printf("(null)          ");
+            }
+            printf(" ");
+            printf("%2d", processTable[i].priority);
+            if(processTable[i].dead){
+                printf("         Terminated(%d)\n", processTable[i].status);
+            }else if(currProc == &processTable[i]){
+                printf("         Running\n");
+            }else {
+                printf("         Runnable\n");
+            }
+
+
+        }
+    }
 }
 
 void TEMP_switchTo(int pid){
@@ -398,6 +461,20 @@ void TEMP_switchTo(int pid){
     }
 
     int prevPsr = USLOSS_PsrGet();
+
+
+    if(prevPsr == 0){
+        prevPsr = USLOSS_PSR_CURRENT_MODE;
+        USLOSS_Console("PSR was set to 0 change to kernel mode");
+    }
+
+    int psrRes = USLOSS_PsrSet(prevPsr);
+    if(psrRes != USLOSS_DEV_OK){
+        USLOSS_Console("Did not set Psr before context switch");
+        USLOSS_Halt(1);
+    }
+
+
     if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
         USLOSS_Console("Failed to disable interrupts in phase1_init\n");
         USLOSS_Halt(1);
