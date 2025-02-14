@@ -43,7 +43,6 @@ int findNextProc();
 // return and pass that value to quit 
 void uslossWrapper(void){
     int prevPsr = USLOSS_PsrGet();
-
     if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
         USLOSS_Console("Failed to disable interrupts in phase1_init\n");
         USLOSS_Halt(1);
@@ -62,21 +61,14 @@ void uslossWrapper(void){
 }
 
 int testcase_mainWrapper(void *arg){
-    int prevPsr = USLOSS_PsrGet();
 
-    if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
-        USLOSS_Console("Failed to disable interrupts in phase1_init\n");
+     if (USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT) != 0) {
+        USLOSS_Console("ERROR: Unable to enable interrupts in testcase_mainWrapper\n");
         USLOSS_Halt(1);
     }
 
     int retval = testcase_main();
-
-    if(USLOSS_PsrSet(prevPsr) != 0) {
-        USLOSS_Console("Error: Failed to restore PSR in phase1_init\n");
-        USLOSS_Halt(1);
-    }
-
-
+ 
     USLOSS_Console("Phase 1A TEMPORARY HACK: testcase_main() returned, simulation will now halt.\n");
     USLOSS_Halt(retval);
 
@@ -170,6 +162,11 @@ void phase1_init(){
 
 // spork works by pointing a new processes startfunc to that process function
 int spork(char *name, int (*startFunc)(void *), void *arg, int stacksize, int priority){
+    if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("ERROR: Someone attempted to call spork while in user mode!\n");
+        USLOSS_Halt(1);
+    }
+
     int prevPsr = USLOSS_PsrGet();
     if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
         USLOSS_Console("Failed to disable interrupts in phase1_init\n");
@@ -259,6 +256,11 @@ pInfo *reverse(pInfo *head){
 }
 
 int join(int *status){
+    if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("ERROR: Not in kernel mode. Call aborted.\n");
+        USLOSS_Halt(1);
+    }
+
     int prevPsr = USLOSS_PsrGet();
     if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
         USLOSS_Console("Failed to disable interrupts in phase1_init\n");
@@ -305,6 +307,11 @@ int join(int *status){
 }
 
 void quit_phase_1a(int status, int switchToPid){ 
+    if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("ERROR: Not in kernel mode. Call aborted.\n");
+        USLOSS_Halt(1);
+    }
+
     int prevPsr = USLOSS_PsrGet();
     if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
         USLOSS_Console("Failed to disable interrupts in phase1_init\n");
@@ -317,6 +324,25 @@ void quit_phase_1a(int status, int switchToPid){
 
     if(currProc -> pid == 1){
         USLOSS_Halt(1);
+    }
+
+    if(currProc -> firstChildHead != NULL){
+        USLOSS_Console("ERROR: Process pid %d called quit() while it still had children.\n", currProc -> pid);
+        USLOSS_Halt(1);
+    }
+
+    if(currProc -> firstChildHead != NULL){
+        USLOSS_Console("DEBUG: Process %d has children, checking their status\n", currProc->pid);
+        pInfo *child = currProc -> firstChildHead;
+        while (child  != NULL) {
+            USLOSS_Console("DEBUG: Checking child %d, dead=%d\n", child->pid, child->dead);
+            if(!child -> dead){
+                USLOSS_Console("ERROR: Process pid %d called quit() while it still had children.\n",currProc -> pid);
+                USLOSS_Halt(1);
+            }
+            child = child -> nextChild;
+        
+        }
     }
 
     currProc -> status = status; 
@@ -365,6 +391,11 @@ void dumpProcesses(){
 }
 
 void TEMP_switchTo(int pid){
+    if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
+        USLOSS_Console("ERROR: Not in kernel mode. Call aborted.\n");
+        USLOSS_Halt(1);
+    }
+
     int prevPsr = USLOSS_PsrGet();
     if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
         USLOSS_Console("Failed to disable interrupts in phase1_init\n");
