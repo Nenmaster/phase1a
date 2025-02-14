@@ -301,6 +301,30 @@ int spork(char *name, int (*startFunc)(void *), void *arg, int stacksize, int pr
     return -1;
 }
 
+pInfo *reverse(pInfo *head){
+   // USLOSS_Console("Reverse: Starting list reversal\n");
+   // USLOSS_Console("  Original list: ");
+   // pInfo *temp = head;
+   // while(temp != NULL) {
+   //     USLOSS_Console("%d -> ", temp->pid);
+   //     temp = temp->nextChild;
+   // }
+   // USLOSS_Console("NULL\n");
+
+    pInfo *prev = NULL;
+    pInfo *curr = head;
+    pInfo *next = NULL;
+
+    while(curr != NULL && curr ->pid >= 0){
+        next = curr -> nextChild;
+        curr -> nextChild = prev;
+        //USLOSS_Console("  Reversed: %d points to %d\n", curr ->pid, prev ? prev->pid : -1);
+        prev = curr;
+        curr = next;
+    }
+    return prev;
+}
+
 int join(int *status){
     int prevPsr = USLOSS_PsrGet();
     if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
@@ -318,8 +342,13 @@ int join(int *status){
      //              getpid(), currProc->firstChildHead ->pid);
 
 
+    pInfo *revList = reverse(currProc -> firstChildHead);
+    currProc -> firstChildHead = revList;
+
     pInfo *prev = NULL;
-    pInfo *child = currProc -> firstChildHead;
+    pInfo *child = revList;
+
+   // pInfo *child = currProc -> firstChildHead;
     //printf("child name = %s\n", child -> name);
     //printf("child pid = %d\n", child -> pid);
 
@@ -332,13 +361,9 @@ int join(int *status){
                 //USLOSS_Console("Join: Removing first child from list\n");
                 currProc -> firstChildHead = child -> nextChild;
                 //USLOSS_Console("join: scanning children of PID %d; current child PID = %d\n", getpid(), child->pid);
-
-               // printf("currProc name = %s\n", currProc -> firstChildHead-> name);
-               // printf("currProc pid = %d\n", currProc -> firstChildHead -> pid);
             }else {
                 //USLOSS_Console("Join: Removing child from middle/end of list\n");
-                prev -> nextChild = child -> nextChild;
-               // printf("prev name = %s and prev pid = %d\n", prev -> nextChild -> name, prev -> nextChild -> pid);
+                prev -> nextChild = child -> nextChild; 
             }
 
             *status = child -> status; 
@@ -368,6 +393,7 @@ int join(int *status){
         USLOSS_Console("Error: Failed to restore PSR in phase1_init\n");
         USLOSS_Halt(1);
     }
+    currProc -> firstChildHead = reverse(revList);
     //USLOSS_Console("=== Join: No dead children found, returning -1 ===\n");
     return -1;
 }
@@ -501,6 +527,3 @@ void TEMP_switchTo(int pid){
 
         //}
 }
-
-
-
