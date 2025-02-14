@@ -29,36 +29,10 @@
 
 
 
-typedef struct pInfo{
-    // general process info 
-    char *name;
-    int priority;
-    int pid;
-    int parentPid;
-    int status;
-    int state; 
-    bool dead;
 
-    // removed process or Node structs and used pInfo as the 
-    // main node struct for the process, have differnt structs was making
-    // adding, removing and search difficult 
-    struct pInfo *parent;
-    struct pInfo *firstChildHead;
-    struct pInfo *nextChild;
+//void printList(pInfo *proc, int parentpid);
 
-
-    // info to work with USLOSS
-    USLOSS_Context context;
-    void *stack;
-    int stackSize;
-    int (*startFunc)(void*);
-    void *argument;
-}pInfo;
-
-void printList(pInfo *proc, int parentpid);
-
-extern pInfo processTable[MAXPROC];
-#include "tree_queue.h"
+//extern pInfo processTable[MAXPROC];
 
 
 
