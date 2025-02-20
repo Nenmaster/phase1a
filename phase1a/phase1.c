@@ -43,7 +43,16 @@ pInfo *currProc = NULL;
 int nextPid = 2;
 int nextSlot = 3;
 
-// errase this function
+// prototpyes
+pInfo *reverse(pInfo *head);
+int findProcSlot(int pid);
+void kernelModeCheck();
+int disableInterrupts();
+void restoreInterrupts(int prevPsr);
+void linkChild(pInfo *parent, pInfo *child);
+
+// errase this function before turning in very helpful for
+// parent child relationship printing
 void printProcessHierarchy() {
   printf("\nProcess Hierarchy:\n");
   printf("====================\n");
@@ -74,17 +83,15 @@ void printProcessHierarchy() {
 void uslossWrapper(void) {
   int prevPsr = USLOSS_PsrGet();
 
+  // ensures were in kernel mode
   if (!(prevPsr & USLOSS_PSR_CURRENT_MODE)) {
     prevPsr |= USLOSS_PSR_CURRENT_MODE;
   }
 
+  // dont use disbale interrupts here due to modify prev
+  // psr above
   if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
-    USLOSS_Console("Failed to disable interrupts in phase1_init\n");
-    USLOSS_Halt(1);
-  }
-
-  if (USLOSS_PsrSet(prevPsr | USLOSS_PSR_CURRENT_INT) != 0) {
-    USLOSS_Console("faled to enable interrupts in wrapper");
+    USLOSS_Console("Failed to disable interrupts in wrapper\n");
     USLOSS_Halt(1);
   }
 
@@ -98,6 +105,11 @@ void uslossWrapper(void) {
   }
   pInfo *process = &processTable[slot];
 
+  if (USLOSS_PsrSet(prevPsr | USLOSS_PSR_CURRENT_INT) != 0) {
+    USLOSS_Console("faled to enable interrupts in wrapper");
+    USLOSS_Halt(1);
+  }
+
   process->startFunc(process->argument);
 
   prevPsr |= USLOSS_PSR_CURRENT_MODE;
@@ -108,10 +120,7 @@ void uslossWrapper(void) {
 
   process->dead = true;
 
-  if (USLOSS_PsrSet(prevPsr) != 0) {
-    USLOSS_Console("Error: Failed to restore PSR in phase1_init\n");
-    USLOSS_Halt(1);
-  }
+  restoreInterrupts(prevPsr);
 }
 
 int testcase_mainWrapper(void *arg) {
@@ -234,20 +243,24 @@ int spork(char *name, int (*startFunc)(void *), void *arg, int stacksize,
     USLOSS_Halt(1);
   }
 
-  int prevPsr = USLOSS_PsrGet();
-  if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
-    USLOSS_Console("Failed to disable interrupts in phase1_init\n");
-    USLOSS_Halt(1);
-  }
+  int prevPsr = disableInterrupts();
 
-  if (stacksize < USLOSS_MIN_STACK)
+  if (stacksize < USLOSS_MIN_STACK) {
+    restoreInterrupts(prevPsr);
     return -2;
-  if (priority < 1 || priority > 5)
+  }
+  if (priority < 1 || priority > 5) {
+    restoreInterrupts(prevPsr);
     return -1;
-  if (name == NULL || strlen(name) >= MAXNAME)
+  }
+  if (name == NULL || strlen(name) >= MAXNAME) {
+    restoreInterrupts(prevPsr);
     return -1;
-  if (startFunc == NULL)
+  }
+  if (startFunc == NULL) {
+    restoreInterrupts(prevPsr);
     return -1;
+  }
 
   int slot = -1;
   if (currProc->pid == 1) {
@@ -269,6 +282,7 @@ int spork(char *name, int (*startFunc)(void *), void *arg, int stacksize,
   }
 
   if (slot == -1) {
+    restoreInterrupts(prevPsr);
     return -1;
   }
 
@@ -276,13 +290,10 @@ int spork(char *name, int (*startFunc)(void *), void *arg, int stacksize,
 
   if (processTable[slot].pid == -1 && processTable[slot].dead) {
     int currPid = nextPid++;
+
+    // new process creation
     pInfo *newProcess = &processTable[slot];
     char *namePointer = strdup(name);
-
-    if (namePointer == NULL) {
-      return -1;
-    }
-
     newProcess->name = namePointer;
     newProcess->pid = currPid;
     newProcess->slot = slot;
@@ -291,87 +302,47 @@ int spork(char *name, int (*startFunc)(void *), void *arg, int stacksize,
     newProcess->argument = arg;
     newProcess->stackSize = stacksize;
     newProcess->stack = malloc(newProcess->stackSize);
-    if (newProcess->stack == NULL) {
+    newProcess->dead = false;
+    newProcess->parent = NULL;
+    newProcess->firstChildHead = NULL;
+    newProcess->nextChild = NULL;
+
+    if (newProcess->stack == NULL || namePointer == NULL) {
       USLOSS_Console("Out of Memory error spork for stack");
       free(namePointer);
       USLOSS_Halt(1);
     }
 
-    newProcess->parent = NULL;
-    newProcess->firstChildHead = NULL;
-    newProcess->nextChild = NULL;
     if (currProc == NULL) {
       newProcess->parent = &processTable[0];
       newProcess->parentPid = 1;
       currProc = newProcess;
     } else {
-      newProcess->parent = currProc;
-      newProcess->parentPid = currProc->pid;
+      linkChild(currProc, newProcess);
     }
-
-    newProcess->dead = false;
-    pInfo *parent = newProcess->parent;
-    if (parent->firstChildHead == NULL) {
-      parent->firstChildHead = newProcess;
-    } else {
-      pInfo *child = parent->firstChildHead;
-      while (child->nextChild != NULL && child->pid != -1) {
-        child = child->nextChild;
-      }
-      child->nextChild = newProcess;
-    }
-    // printProcessHierarchy();
 
     USLOSS_ContextInit(&processTable[slot].context, processTable[slot].stack,
                        processTable[slot].stackSize, NULL, uslossWrapper);
 
-    if (USLOSS_PsrSet(prevPsr) != 0) {
-      USLOSS_Console("Error: Failed to restore PSR in phase1_init\n");
-      USLOSS_Halt(1);
-    }
+    restoreInterrupts(prevPsr);
     return currPid;
   } else {
-    if (USLOSS_PsrSet(prevPsr) != 0) {
-      USLOSS_Console("Error: Failed to restore PSR in phase1_init\n");
-      USLOSS_Halt(1);
-    }
+    restoreInterrupts(prevPsr);
   }
+
   return -1;
-}
-
-// *reverse, reverses the linked list of pInfo nodes based of their PID values
-// of each node it returns the new head of the reversed sublist
-pInfo *reverse(pInfo *head) {
-  pInfo *prev = NULL;
-  pInfo *curr = head;
-  pInfo *next = NULL;
-
-  while (curr != NULL && curr->pid > 0) {
-    next = curr->nextChild;
-    curr->nextChild = prev;
-    prev = curr;
-    curr = next;
-  }
-  return prev;
 }
 
 //  join wakes up the perent proccess if the child process died.
 //  join reports the status of that dead child .
 //  join never blocks
 int join(int *status) {
-  if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
-    USLOSS_Console("ERROR: Not in kernel mode. Call aborted.\n");
-    USLOSS_Halt(1);
-  }
-
-  int prevPsr = USLOSS_PsrGet();
-  if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
-    USLOSS_Console("Failed to disable interrupts in phase1_init\n");
-    USLOSS_Halt(1);
-  }
+  kernelModeCheck();
+  int prevPsr = disableInterrupts();
 
   if (currProc == NULL || status == NULL) {
     USLOSS_Console("Error got NULL\n");
+    restoreInterrupts(prevPsr);
     return -2;
   }
 
@@ -403,6 +374,8 @@ int join(int *status) {
       processTable[childSlot].dead = true;
 
       currProc->firstChildHead = reverse(currProc->firstChildHead);
+
+      restoreInterrupts(prevPsr);
       return pid;
     }
     prev = child;
@@ -412,15 +385,13 @@ int join(int *status) {
   while (child != NULL) {
     if (!child->dead) {
       // this should block for phase1b
+      restoreInterrupts(prevPsr);
       return -2;
     }
     child = child->nextChild;
   }
 
-  if (USLOSS_PsrSet(prevPsr) != 0) {
-    USLOSS_Console("Error: Failed to restore PSR in phase1_init\n");
-    USLOSS_Halt(1);
-  }
+  restoreInterrupts(prevPsr);
   pInfo *orginalList = reverse(currProc->firstChildHead);
   currProc->firstChildHead = orginalList;
   // this should block for phase1b
@@ -430,23 +401,13 @@ int join(int *status) {
 // quits the current proccess
 // switch to the process pass to it in the second arrgument.
 void quit_phase_1a(int status, int switchToPid) {
-  int prevPsr = USLOSS_PsrGet();
-
-  if (!(prevPsr & USLOSS_PSR_CURRENT_MODE)) {
+  if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
     USLOSS_Console(
         "ERROR: Someone attempted to call quit_phase_1a while in user mode!\n");
     USLOSS_Halt(1);
   }
 
-  if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
-    USLOSS_Console("ERROR: Not in kernel mode. Call aborted.\n");
-    USLOSS_Halt(1);
-  }
-
-  if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
-    USLOSS_Console("Failed to disable interrupts in phase1_init\n");
-    USLOSS_Halt(1);
-  }
+  int prevPsr = disableInterrupts();
 
   if (currProc == NULL) {
     USLOSS_Halt(1);
@@ -484,6 +445,7 @@ void quit_phase_1a(int status, int switchToPid) {
   if (USLOSS_PsrSet(prevPsr) != 0) {
     USLOSS_Halt(1);
   }
+  restoreInterrupts(prevPsr);
   while (1) {
   }
 }
@@ -546,11 +508,7 @@ void dumpProcesses() {
 // this will use USLOSS_ContextSwitch() to preform a context switch to the
 // process id passed in the argument
 void TEMP_switchTo(int pid) {
-  if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
-    USLOSS_Console("ERROR: Not in kernel mode. Call aborted.\n");
-    USLOSS_Halt(1);
-  }
-
+  kernelModeCheck();
   int prevPsr = USLOSS_PsrGet();
 
   if (prevPsr == 0) {
@@ -577,22 +535,95 @@ void TEMP_switchTo(int pid) {
     }
   }
 
+  // special check for first proccess(init)
   if (currProc->parent == NULL) {
     currProc = &processTable[slot];
     USLOSS_ContextSwitch(NULL, &currProc->context);
   }
 
   if (pid < 0 || processTable[slot].pid == -1 || processTable[slot].dead) {
-    USLOSS_Console("[TEMP_switchTo] dead or -1 process\n");
+    USLOSS_Console(
+        "Invalid switch, proc is either dead, terminated or invalid slot\n");
     USLOSS_Halt(1);
   }
 
   USLOSS_Context *old = &currProc->context;
   currProc = &processTable[slot];
 
-  if (USLOSS_PsrSet(prevPsr) != 0) {
-    USLOSS_Console("Error: Failed to restore PSR in phase1_init\n");
+  restoreInterrupts(prevPsr);
+  USLOSS_ContextSwitch(old, &currProc->context);
+}
+
+////// HELPER FUNCTIONS ////
+
+// reverses the child link list
+pInfo *reverse(pInfo *head) {
+  pInfo *prev = NULL;
+  pInfo *curr = head;
+  pInfo *next = NULL;
+
+  while (curr != NULL && curr->pid > 0) {
+    next = curr->nextChild;
+    curr->nextChild = prev;
+    prev = curr;
+    curr = next;
+  }
+  return prev;
+}
+
+// finds the proces slot for the given pid
+int findProcSlot(int pid) {
+  for (int i = 0; i < MAXPROC; i++) {
+    if (processTable[i].pid == pid) {
+      return i;
+    }
+  }
+  USLOSS_Console("Proccess Pid not found");
+  USLOSS_Halt(1);
+  return -1;
+}
+
+void kernelModeCheck() {
+  int pid = getpid();
+  int slot = findProcSlot(pid);
+  pInfo *proc = &processTable[slot];
+  if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0) {
+    USLOSS_Console("ERROR: Someone attempted to call %s while in user mode!\n",
+                   proc->name);
     USLOSS_Halt(1);
   }
-  USLOSS_ContextSwitch(old, &currProc->context);
+}
+
+int disableInterrupts() {
+  int prevPsr = USLOSS_PsrGet();
+  if (USLOSS_PsrSet(prevPsr & ~USLOSS_PSR_CURRENT_INT) != 0) {
+    USLOSS_Console("Failed to diable Interrupts\n");
+    USLOSS_Halt(1);
+  }
+
+  return prevPsr;
+}
+
+void restoreInterrupts(int prevPsr) {
+  if (USLOSS_PsrSet(prevPsr) != 0) {
+    USLOSS_Console("Failed to restore Interrupts\n");
+    USLOSS_Halt(1);
+  }
+}
+
+// Same logic as before just encapsulated into a funciton
+// adds process to head of child list
+void linkChild(pInfo *parent, pInfo *child) {
+  child->parent = parent;
+  child->parentPid = parent->pid;
+
+  if (parent->firstChildHead == NULL) {
+    parent->firstChildHead = child;
+  } else {
+    pInfo *kid = parent->firstChildHead;
+    while (kid->nextChild != NULL) {
+      kid = kid->nextChild;
+    }
+    kid->nextChild = child;
+  }
 }
